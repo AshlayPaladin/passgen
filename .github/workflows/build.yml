@@ -1,0 +1,87 @@
+name: Build binaries
+
+on:
+  push:
+    branches: ["main"]
+  pull_request:
+  workflow_dispatch:
+  release:
+    types: [published]
+
+jobs:
+  build-macos:
+    runs-on: macos-latest
+    env:
+      SRC: passgen_v4.cpp   # <-- change if your source filename is different
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install dependencies
+        run: |
+          brew update
+          brew install openssl@3 pkg-config
+
+      - name: Build (macOS)
+        run: |
+          set -euo pipefail
+          OPENSSL_PREFIX="$(brew --prefix openssl@3)"
+          echo "OpenSSL prefix: $OPENSSL_PREFIX"
+          clang++ -std=c++20 -O2 -Wall -Wextra -Wpedantic \
+            "$SRC" -o passgen-macos \
+            -I"$OPENSSL_PREFIX/include" -L"$OPENSSL_PREFIX/lib" -lcrypto
+          chmod +x passgen-macos
+          ./passgen-macos --help || true
+
+      - name: Upload artifact (macOS)
+        uses: actions/upload-artifact@v4
+        with:
+          name: passgen-macos
+          path: passgen-macos
+
+  build-linux:
+    runs-on: ubuntu-latest
+    env:
+      SRC: passgen_v4.cpp   # <-- change if needed
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libssl-dev
+
+      - name: Build (Linux)
+        run: |
+          g++ -std=c++20 -O2 -Wall -Wextra -Wpedantic \
+            "$SRC" -o passgen-linux -lcrypto
+          chmod +x passgen-linux
+          ./passgen-linux --help || true
+
+      - name: Upload artifact (Linux)
+        uses: actions/upload-artifact@v4
+        with:
+          name: passgen-linux
+          path: passgen-linux
+
+  attach-to-release:
+    if: github.event_name == 'release'
+    needs: [build-macos, build-linux]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download macOS artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: passgen-macos
+
+      - name: Download Linux artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: passgen-linux
+
+      - name: Attach artifacts to GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            passgen-macos
+            passgen-linux
