@@ -5,6 +5,8 @@ It supports an **optional enhanced security mode** ("pepper") without making nor
 
 This tool works on **Windows, macOS, and Linux**.
 
+Note: Prebuilt Binaries are available for Windows and Linux. Mac users can build from source.
+
 ---
 
 ## Files Included
