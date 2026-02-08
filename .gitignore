@@ -3,3 +3,4 @@ passgen
 passgen.exe
 generator.log
 *.o
+build/
