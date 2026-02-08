@@ -12,7 +12,7 @@ jobs:
   build-macos:
     runs-on: macos-latest
     env:
-      SRC: passgen.cpp   # <-- change if your source filename is different
+      SRC: passgen.cpp
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -42,9 +42,10 @@ jobs:
   build-linux:
     runs-on: ubuntu-latest
     env:
-      SRC: passgen.cpp   # <-- change if needed
+      SRC: passgen.cpp
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout
+        uses: actions/checkout@v4
 
       - name: Install dependencies
         run: |
@@ -53,6 +54,7 @@ jobs:
 
       - name: Build (Linux)
         run: |
+          set -euo pipefail
           g++ -std=c++20 -O2 -Wall -Wextra -Wpedantic \
             "$SRC" -o passgen-linux -lcrypto
           chmod +x passgen-linux
@@ -64,9 +66,72 @@ jobs:
           name: passgen-linux
           path: passgen-linux
 
+  build-windows:
+    runs-on: windows-latest
+    env:
+      SRC: passgen.cpp
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up MSYS2 (MinGW64)
+        uses: msys2/setup-msys2@v2
+        with:
+          msystem: MINGW64
+          update: true
+          install: >-
+            mingw-w64-x86_64-toolchain
+            mingw-w64-x86_64-openssl
+            zip
+
+      - name: Build (Windows)
+        shell: msys2 {0}
+        run: |
+          set -euo pipefail
+          g++ -std=c++20 -O2 -Wall -Wextra -Wpedantic \
+            "$SRC" -o passgen.exe -lcrypto \
+            -static-libstdc++ -static-libgcc
+
+      - name: Collect runtime DLLs (Windows)
+        shell: msys2 {0}
+        run: |
+          set -euo pipefail
+          # OpenSSL DLLs (libcrypto is required; libssl may or may not be)
+          cp /mingw64/bin/libcrypto-3-x64.dll . || true
+          cp /mingw64/bin/libssl-3-x64.dll . || true
+
+          # Threading/runtime support (often required)
+          cp /mingw64/bin/libwinpthread-1.dll . || true
+
+          # These are usually not needed due to static-libstdc++/static-libgcc,
+          # but copy if present to avoid surprises.
+          cp /mingw64/bin/libstdc++-6.dll . || true
+          cp /mingw64/bin/libgcc_s_seh-1.dll . || true
+
+          # If OpenSSL pulls zlib on this runner, include it too.
+          cp /mingw64/bin/zlib1.dll . || true
+
+      - name: Package (Windows zip)
+        shell: msys2 {0}
+        run: |
+          set -euo pipefail
+          mkdir -p dist/passgen-windows
+          cp passgen.exe dist/passgen-windows/
+          cp words.txt dist/passgen-windows/ || true
+          cp README.md dist/passgen-windows/ || true
+          cp *.dll dist/passgen-windows/ || true
+          cd dist
+          zip -r passgen_windows.zip passgen-windows
+
+      - name: Upload artifact (Windows)
+        uses: actions/upload-artifact@v4
+        with:
+          name: passgen-windows
+          path: dist/passgen_windows.zip
+
   attach-to-release:
     if: github.event_name == 'release'
-    needs: [build-macos, build-linux]
+    needs: [build-macos, build-linux, build-windows]
     runs-on: ubuntu-latest
     steps:
       - name: Download macOS artifact
@@ -79,9 +144,15 @@ jobs:
         with:
           name: passgen-linux
 
+      - name: Download Windows artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: passgen-windows
+
       - name: Attach artifacts to GitHub Release
         uses: softprops/action-gh-release@v2
         with:
           files: |
             passgen-macos
             passgen-linux
+            passgen_windows.zip
