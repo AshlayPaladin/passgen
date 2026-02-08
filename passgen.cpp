@@ -7,6 +7,7 @@
 #include <random>
 #include <sstream>
 #include <string>
+#include <cstdlib>
 #include <vector>
 #include <openssl/hmac.h>
 #include <openssl/evp.h>
@@ -58,6 +59,17 @@ static std::string get_env_or_empty(const char* key) {
 }
 
 // Minimal .env loader: KEY=VALUE lines, ignores blanks and comments (#)
+
+static void set_env_if_missing(const std::string& key, const std::string& val) {
+    if (std::getenv(key.c_str()) != nullptr) return;
+
+#if defined(_WIN32) || defined(_WIN64)
+    _putenv_s(key.c_str(), val.c_str());
+#else
+    setenv(key.c_str(), val.c_str(), 0); // do not overwrite existing env
+#endif
+}
+
 static void load_dotenv(const std::string& env_path) {
     std::ifstream in(env_path);
     if (!in) return;
@@ -80,7 +92,7 @@ static void load_dotenv(const std::string& env_path) {
         }
 
         if (!key.empty()) {
-            setenv(key.c_str(), val.c_str(), 0); // don't overwrite existing env
+            set_env_if_missing(key, val); // don't overwrite existing env
         }
     }
 }
